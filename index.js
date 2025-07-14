@@ -1,6 +1,6 @@
 // Load environment variables and check for required keys
 require('dotenv').config();
-['FREEIMAGE_API_KEY', 'TOKEN', 'CHANNEL_ID', 'SUPABASE_URL', 'SUPABASE_ANON_KEY'].forEach((key) => {
+['IMGBB_API_KEY', 'TOKEN', 'CHANNEL_ID', 'SUPABASE_URL', 'SUPABASE_ANON_KEY'].forEach((key) => {
   if (!process.env[key]) {
     console.error(`Missing required environment variable: ${key}`);
     process.exit(1);
@@ -18,7 +18,7 @@ const { createClient } = require('@supabase/supabase-js');
 const FormData = require('form-data');
 
 const {
-  FREEIMAGE_API_KEY,
+  IMGBB_API_KEY,
   TOKEN,
   CHANNEL_ID,
   SUPABASE_URL,
@@ -90,7 +90,7 @@ async function exportRateLimit(reason, filename) {
   await fs.writeFile(pathRatelimit, JSON.stringify(data, null, 2));
 }
 
-// Upload image to Freeimage.host and store metadata in Supabase
+// Upload image to imgbb and store metadata in Supabase
 const upload = async (filePath, gamertag, name, msgId) => {
   // Deduplication: check if already uploaded in Supabase
   const { data: existing, error: fetchError } = await supabase
@@ -102,19 +102,18 @@ const upload = async (filePath, gamertag, name, msgId) => {
     console.error(`[Supabase] Fetch error: ${fetchError.message}`);
   }
   if (existing && existing.length > 0) {
-    console.log(`[freeimage.host] Skipped duplicate (Supabase): ${name}`);
+    console.log(`[imgbb] Skipped duplicate (Supabase): ${name}`);
     await fs.remove(filePath);
     return;
   }
 
   const form = new FormData();
-  form.append('key', FREEIMAGE_API_KEY);
-  form.append('action', 'upload');
-  form.append('format', 'json');
-  form.append('source', fs.createReadStream(filePath));
+  form.append('key', IMGBB_API_KEY);
+  form.append('image', fs.createReadStream(filePath));
+  form.append('name', name);
 
   try {
-    const res = await fetch('https://freeimage.host/api/1/upload', {
+    const res = await fetch('https://api.imgbb.com/1/upload', {
       method: 'POST',
       body: form,
       headers: form.getHeaders()
@@ -123,7 +122,7 @@ const upload = async (filePath, gamertag, name, msgId) => {
     if (res.status === 429) {
       const reason = 'HTTP 429 Rate Limit';
       await exportRateLimit(reason, name);
-      console.warn(`[RateLimit] Hit freeimage.host rate limit. Pausing uploads for 2 minutes.`);
+      console.warn(`[RateLimit] Hit imgbb rate limit. Pausing uploads for 2 minutes.`);
       return 'RATE_LIMIT';
     }
     const contentType = res.headers.get('content-type');
@@ -136,30 +135,29 @@ const upload = async (filePath, gamertag, name, msgId) => {
         console.warn(`[RateLimit] Detected rate limit in response. Pausing uploads for 2 minutes.`);
         return 'RATE_LIMIT';
       }
-      console.error(`[freeimage.host] Non-JSON response:`, text);
+      console.error(`[imgbb] Non-JSON response:`, text);
       return;
     }
     const json = await res.json();
-    if (json.status_code === 200 && json.image && json.image.url) {
-      console.log(`[freeimage.host] Uploaded: ${name}`);
+    if (json.success && json.data && json.data.url) {
+      console.log(`[imgbb] Uploaded: ${name}`);
       await insertPhoto({
-        image_url: json.image.url,
+        image_url: json.data.url,
         filename: name,
-        created_at: json.image.date_gmt || new Date().toISOString()
+        created_at: new Date(parseInt(json.data.time, 10) * 1000).toISOString()
       });
     } else {
       // Check for rate limit in JSON error
-      if ((json.status_txt && String(json.status_txt).toLowerCase().includes('rate limit')) ||
-          (json.error && String(json.error).toLowerCase().includes('rate limit'))) {
-        const reason = 'JSON error: ' + (json.status_txt || json.error);
+      if (json.error && String(json.error.message).toLowerCase().includes('rate limit')) {
+        const reason = 'JSON error: ' + (json.error?.message || json.message);
         await exportRateLimit(reason, name);
         console.warn(`[RateLimit] Detected rate limit in JSON. Pausing uploads for 2 minutes.`);
         return 'RATE_LIMIT';
       }
-      console.error(`[freeimage.host] Failed: ${name} | ${json.status_txt || json.error}`);
+      console.error(`[imgbb] Failed: ${name} | ${json.error?.message || json.message}`);
     }
   } catch (e) {
-    console.error(`[freeimage.host Upload] ${name}: ${e.message}`);
+    console.error(`[imgbb Upload] ${name}: ${e.message}`);
   }
 
   await fs.remove(filePath).catch(e => console.error(`[Cleanup] ${name}: ${e.message}`));
@@ -258,9 +256,15 @@ client.once(Events.ClientReady, () => {
 
 client.login(TOKEN);
 
-// Minimal Express server for Render web service health check
+// --- Express server for Render web service health check ---
 const express = require('express');
 const app = express();
+
+app.get('/', (req, res) => {
+  res.send('Snapmatic bot is running!');
+});
+
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Bot is running!'));
-app.listen(PORT, () => console.log(`Web server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`[Express] Web service running on port ${PORT}`);
+});
