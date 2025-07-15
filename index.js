@@ -149,9 +149,13 @@ const upload = async (filePath, gamertag, name, msgId) => {
 // Download and process image embeds from Discord messages
 const handleEmbed = async (msg, embed) => {
   const url = embed?.image?.url;
-  if (!url || !embed?.description) return console.warn(`[Embed] Skipped: ${msg.id}`);
+  if (!url) return console.warn(`[Embed] Skipped: ${msg.id}`);
 
-  const gamertag = getTag(embed);
+  // Use description for gamertag if available, else fallback to message author username or 'Unknown'
+  let gamertag = getTag(embed);
+  if (!gamertag || gamertag === 'Unknown') {
+    gamertag = msg.author?.username || 'Unknown';
+  }
   const ext = path.extname(url.split('?')[0]) || '.jpg';
   const name = `${gamertag.replace(/[^a-zA-Z0-9_\-]/g, '')}_${msg.id}${ext}`;
   const dir = CONFIG.temp;
