@@ -50,17 +50,16 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
 // Extract gamertag from embed description
 const getTag = embed => embed?.description?.match(/Uploaded by\s+(.+)/i)?.[1]?.trim() || 'Unknown';
 
-// Extract gamertag from filename (handles underscores)
+// Extract gamertag from filename/path (handles new folder structure)
 function extractGamertag(filename) {
-  const base = filename.replace(/\.[^/.]+$/, '');
-  const lastUnderscore = base.lastIndexOf('_');
-  if (lastUnderscore === -1) return base;
-  return base.substring(0, lastUnderscore);
+  // filename is like 'snapmatic/Baim777/1393931150195560519.jpg'
+  const parts = filename.split('/');
+  return parts.length >= 2 ? parts[1] : 'Unknown';
 }
 
 // Insert photo metadata into Supabase
-async function insertPhoto({ image_url, filename, created_at }) {
-  const uploaderGamertag = extractGamertag(filename);
+async function insertPhoto({ image_url, filename, fullPath, created_at }) {
+  const uploaderGamertag = extractGamertag(fullPath);
   const { error } = await supabase.from('photos').insert([
     {
       image_url,
@@ -90,77 +89,61 @@ async function exportRateLimit(reason, filename) {
   await fs.writeFile(pathRatelimit, JSON.stringify(data, null, 2));
 }
 
-// Upload image to imgbb and store metadata in Supabase
+// Upload image to GitHub via worker and store metadata in Supabase
 const upload = async (filePath, gamertag, name, msgId) => {
   // Deduplication: check if already uploaded in Supabase
+  const githubFolder = `snapmatic/${gamertag.replace(/[^a-zA-Z0-9_\-]/g, '')}`;
+  const githubName = name.replace(/^.*?_/, ''); // Remove gamertag_ from name
+  const githubPath = `${githubFolder}/${githubName}`;
   const { data: existing, error: fetchError } = await supabase
     .from('photos')
     .select('filename')
-    .eq('filename', name)
+    .eq('filename', githubPath)
     .limit(1);
   if (fetchError) {
     console.error(`[Supabase] Fetch error: ${fetchError.message}`);
   }
   if (existing && existing.length > 0) {
-    console.log(`[imgbb] Skipped duplicate (Supabase): ${name}`);
+    console.log(`[GitHub] Skipped duplicate (Supabase): ${githubPath}`);
     await fs.remove(filePath);
     return;
   }
 
-  const form = new FormData();
-  form.append('key', IMGBB_API_KEY);
-  form.append('image', fs.createReadStream(filePath));
-  form.append('name', name);
-
   try {
-    const res = await fetch('https://api.imgbb.com/1/upload', {
+    const fileBuffer = await fs.readFile(filePath);
+    const githubUploadUrl = `https://snapmatic.the360unity.workers.dev/upload?path=${encodeURIComponent(githubPath)}`;
+    const res = await fetch(githubUploadUrl, {
       method: 'POST',
-      body: form,
-      headers: form.getHeaders()
+      body: fileBuffer,
+      headers: { 'Content-Type': 'application/octet-stream' }
     });
-    // Rate limit detection
     if (res.status === 429) {
-      const reason = 'HTTP 429 Rate Limit';
-      await exportRateLimit(reason, name);
-      console.warn(`[RateLimit] Hit imgbb rate limit. Pausing uploads for 2 minutes.`);
+      const reason = 'HTTP 429 Rate Limit (GitHub worker)';
+      await exportRateLimit(reason, githubPath);
+      console.warn(`[RateLimit] Hit GitHub worker rate limit. Pausing uploads for 2 minutes.`);
       return 'RATE_LIMIT';
     }
-    const contentType = res.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
+    if (!res.ok) {
       const text = await res.text();
-      // Check for rate limit in non-JSON response
-      if (text.toLowerCase().includes('rate limit')) {
-        const reason = 'Non-JSON response: ' + text;
-        await exportRateLimit(reason, name);
-        console.warn(`[RateLimit] Detected rate limit in response. Pausing uploads for 2 minutes.`);
-        return 'RATE_LIMIT';
-      }
-      console.error(`[imgbb] Non-JSON response:`, text);
+      console.error(`[GitHub] Upload failed: ${githubPath} | ${text}`);
       return;
     }
     const json = await res.json();
-    if (json.success && json.data && json.data.url) {
-      console.log(`[imgbb] Uploaded: ${name}`);
+    // Compose the raw GitHub URL
+    // https://raw.githubusercontent.com/lilpizzaro/gtarevived/master/snapmatic/gamertag/image01.jpg
+    const image_url = `https://raw.githubusercontent.com/lilpizzaro/gtarevived/master/${githubPath}`;
+    console.log(`[GitHub] Uploaded: ${githubPath}`);
       await insertPhoto({
-        image_url: json.data.url,
-        filename: name,
-        created_at: new Date(parseInt(json.data.time, 10) * 1000).toISOString()
+      image_url,
+      filename: githubName, // Only the image filename, not the full path
+      fullPath: githubPath, // Pass the full path for gamertag extraction
+      created_at: new Date().toISOString()
       });
-    } else {
-      // Check for rate limit in JSON error
-      if (json.error && String(json.error.message).toLowerCase().includes('rate limit')) {
-        const reason = 'JSON error: ' + (json.error?.message || json.message);
-        await exportRateLimit(reason, name);
-        console.warn(`[RateLimit] Detected rate limit in JSON. Pausing uploads for 2 minutes.`);
-        return 'RATE_LIMIT';
-      }
-      console.error(`[imgbb] Failed: ${name} | ${json.error?.message || json.message}`);
-    }
   } catch (e) {
-    console.error(`[imgbb Upload] ${name}: ${e.message}`);
+    console.error(`[GitHub Upload] ${githubPath}: ${e.message}`);
   }
 
-  await fs.remove(filePath).catch(e => console.error(`[Cleanup] ${name}: ${e.message}`));
+  await fs.remove(filePath).catch(e => console.error(`[Cleanup] ${githubPath}: ${e.message}`));
 };
 
 // Download and process image embeds from Discord messages
