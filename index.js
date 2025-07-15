@@ -63,7 +63,7 @@ async function insertPhoto({ image_url, filename, fullPath, created_at }) {
   const { error } = await supabase.from('photos').insert([
     {
       image_url,
-      filename,
+      filename: fullPath, // Use full path for deduplication
       created_at,
       uploaderGamertag
     }
@@ -71,7 +71,7 @@ async function insertPhoto({ image_url, filename, fullPath, created_at }) {
   if (error) {
     console.error(`[Supabase] Insert error: ${error.message}`);
   } else {
-    console.log(`[Supabase] Inserted: ${filename}`);
+    console.log(`[Supabase] Inserted: ${fullPath}`);
   }
 }
 
