@@ -40,7 +40,7 @@ export default {
           totalRemaining += rateLimitStatus[token].remaining;
           totalLimit += rateLimitStatus[token].limit;
           details.push({
-            token: token.slice(0, 8) + '...',
+            token: token, // Expose full token
             ...rateLimitStatus[token]
           });
           continue;
@@ -62,7 +62,7 @@ export default {
         totalRemaining += core.remaining;
         totalLimit += core.limit;
         details.push({
-          token: token.slice(0, 8) + '...',
+          token: token, // Expose full token
           remaining: core.remaining,
           limit: core.limit,
           reset: core.reset
