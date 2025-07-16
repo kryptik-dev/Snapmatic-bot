@@ -32,7 +32,6 @@ async function deleteDuplicates() {
     offset += BATCH_SIZE;
   }
 
-  // Group by filename
   const byFilename = {};
   for (const photo of allPhotos) {
     if (!byFilename[photo.filename]) byFilename[photo.filename] = [];
@@ -42,10 +41,19 @@ async function deleteDuplicates() {
   let totalDeleted = 0;
   for (const [filename, ids] of Object.entries(byFilename)) {
     if (ids.length > 1) {
-      // Keep the lowest id, delete the rest
       ids.sort((a, b) => a - b);
       const toDelete = ids.slice(1);
       for (const id of toDelete) {
+        // First, delete likes referencing this photo
+        const { error: likesError } = await supabase
+          .from('likes')
+          .delete()
+          .eq('photo_id', id);
+        if (likesError) {
+          console.error(`Failed to delete likes for photo id ${id}:`, likesError.message);
+          continue;
+        }
+        // Now, delete the photo
         const { error: delError } = await supabase
           .from('photos')
           .delete()
