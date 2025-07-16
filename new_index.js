@@ -36,7 +36,7 @@ const START_DATE = new Date('2025-07-15T00:00:00Z');
 
 const CONFIG = {
   tempDir: './snapmatic-temp',
-  scanInterval: 30000 // 30,000 milliseconds = 30 seconds
+  scanInterval: 30000
 };
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -213,19 +213,16 @@ async function fetchImages() {
     await fs.ensureDir(CONFIG.tempDir);
     const channel = await discordClient.channels.fetch(CHANNEL_ID);
 
-    // Always fetch the latest 100 messages
     const fetchOptions = { limit: 100 };
     const messages = await channel.messages.fetch(fetchOptions);
     if (!messages.size) {
       return;
     }
 
-    // Sort messages from oldest to newest
     const sortedMessages = [...messages.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
     for (const msg of sortedMessages) {
       if (msg.createdTimestamp < START_DATE.getTime()) continue;
       for (const embed of msg.embeds) {
-        // Check if this image has already been uploaded by filename
         const url = embed?.image?.url;
         if (!url) continue;
         let gamertag = extractGamertagFromEmbed(embed);
@@ -238,7 +235,7 @@ async function fetchImages() {
         const githubName = name.replace(/^.*?_/, '');
         const githubPath = `${githubFolder}/${githubName}`;
         if (knownFilenames.has(githubPath)) {
-          continue; // Already processed
+          continue;
         }
         try {
           await processEmbed(msg, embed);
@@ -263,7 +260,6 @@ discordClient.once(Events.ClientReady, async () => {
   console.log(`[Startup] Fetching existing filenames from Supabase...`);
   await loadKnownFilenames();
   console.log(`[Startup] Loaded ${knownFilenames.size} filenames from Supabase.`);
-  // Initial backlog scan (optional, can be removed if not needed)
   await fetchImages();
 
   setInterval(async () => {
@@ -279,14 +275,29 @@ discordClient.once(Events.ClientReady, async () => {
 
 discordClient.login(TOKEN);
 
+const logs = [];
+const MAX_LOGS = 50;
+
+function logWithCapture(...args) {
+  const msg = args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+  logs.push(`[${new Date().toISOString()}] ${msg}`);
+  if (logs.length > MAX_LOGS) logs.shift();
+  console.log(...args);
+}
+
+console.log = logWithCapture;
+console.error = logWithCapture;
+console.warn = logWithCapture;
+
 const express = require('express');
 const app = express();
 
 app.get('/', (req, res) => {
-  res.send('Snapmatic bot is running!');
+  res.setHeader('Content-Type', 'text/plain');
+  res.send(logs.slice(-MAX_LOGS).join('\n'));
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`[Express] Web service running on port ${PORT}`);
+  logWithCapture(`[Express] Web service running on port ${PORT}`);
 });
