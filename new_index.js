@@ -212,43 +212,27 @@ async function fetchImages() {
   try {
     await fs.ensureDir(CONFIG.tempDir);
     const channel = await discordClient.channels.fetch(CHANNEL_ID);
-
-    while (true) {
-      const fetchOptions = {
-        limit: 100,
-        ...(scanningBacklog && beforeMessageId ? { before: beforeMessageId } : !scanningBacklog && lastMessageId ? { after: lastMessageId } : {})
-      };
-
-      const messages = await channel.messages.fetch(fetchOptions);
-      if (!messages.size) {
-        if (scanningBacklog) {
-          scanningBacklog = false;
-          console.log(`[Sync] Backlog complete.`);
-        }
-        break;
-      }
-
-      const sortedMessages = [...messages.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
-      for (const msg of sortedMessages) {
-        if (msg.createdTimestamp < START_DATE.getTime()) continue;
-        scanningBacklog ? (beforeMessageId = msg.id) : (lastMessageId = msg.id);
-        for (const embed of msg.embeds) {
-          try {
-            await processEmbed(msg, embed);
-          } catch (e) {
-            if (e.message === 'RATE_LIMIT') {
-              console.warn(`[RateLimit] Pausing all uploads for 2 minutes due to rate limit.`);
-              await delay(2 * 60 * 1000);
-              return fetchImages();
-            } else {
-              console.error(`[HandleEmbed] ${e.message}`);
-            }
+    const fetchOptions = lastMessageId ? { limit: 100, after: lastMessageId } : { limit: 0 };
+    const messages = await channel.messages.fetch(fetchOptions);
+    if (!messages.size) return;
+    const sortedMessages = [...messages.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+    for (const msg of sortedMessages) {
+      for (const embed of msg.embeds) {
+        try {
+          await processEmbed(msg, embed);
+        } catch (e) {
+          if (e.message === 'RATE_LIMIT') {
+            console.warn(`[RateLimit] Pausing all uploads for 2 minutes due to rate limit.`);
+            await delay(2 * 60 * 1000);
+            return fetchImages();
+          } else {
+            console.error(`[HandleEmbed] ${e.message}`);
           }
         }
       }
-
-      if (messages.size < 100) break;
     }
+    // Update lastMessageId to the newest processed message
+    lastMessageId = sortedMessages[sortedMessages.length - 1]?.id || lastMessageId;
   } catch (e) {
     console.error(`[FetchImages] ${e.message}`);
   }
@@ -259,7 +243,16 @@ discordClient.once(Events.ClientReady, async () => {
   console.log(`[Startup] Fetching existing filenames from Supabase...`);
   await loadKnownFilenames();
   console.log(`[Startup] Loaded ${knownFilenames.size} filenames from Supabase.`);
-  fetchImages();
+
+  // Set lastMessageId to the latest message in the channel (if any)
+  const channel = await discordClient.channels.fetch(CHANNEL_ID);
+  const messages = await channel.messages.fetch({ limit: 1 });
+  if (messages.size > 0) {
+    lastMessageId = messages.first().id;
+    console.log(`[Startup] Set lastMessageId to ${lastMessageId}`);
+  } else {
+    console.log(`[Startup] Channel is empty, no lastMessageId set.`);
+  }
 
   setInterval(async () => {
     try {
