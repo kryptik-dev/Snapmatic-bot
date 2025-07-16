@@ -278,16 +278,34 @@ discordClient.login(TOKEN);
 const logs = [];
 const MAX_LOGS = 50;
 
+const origLog = console.log;
+const origError = console.error;
+const origWarn = console.warn;
+
 function logWithCapture(...args) {
   const msg = args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
   logs.push(`[${new Date().toISOString()}] ${msg}`);
   if (logs.length > MAX_LOGS) logs.shift();
-  console.log(...args);
+  origLog.apply(console, args);
+}
+
+function errorWithCapture(...args) {
+  const msg = args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+  logs.push(`[${new Date().toISOString()}] ERROR: ${msg}`);
+  if (logs.length > MAX_LOGS) logs.shift();
+  origError.apply(console, args);
+}
+
+function warnWithCapture(...args) {
+  const msg = args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+  logs.push(`[${new Date().toISOString()}] WARN: ${msg}`);
+  if (logs.length > MAX_LOGS) logs.shift();
+  origWarn.apply(console, args);
 }
 
 console.log = logWithCapture;
-console.error = logWithCapture;
-console.warn = logWithCapture;
+console.error = errorWithCapture;
+console.warn = warnWithCapture;
 
 const express = require('express');
 const app = express();
