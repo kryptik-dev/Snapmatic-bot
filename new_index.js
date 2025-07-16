@@ -36,7 +36,7 @@ const START_DATE = new Date('2025-07-15T00:00:00Z');
 
 const CONFIG = {
   tempDir: './snapmatic-temp',
-  scanInterval: 180000
+  scanInterval: 30000 // 30,000 milliseconds = 30 seconds
 };
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -212,12 +212,34 @@ async function fetchImages() {
   try {
     await fs.ensureDir(CONFIG.tempDir);
     const channel = await discordClient.channels.fetch(CHANNEL_ID);
-    const fetchOptions = lastMessageId ? { limit: 100, after: lastMessageId } : { limit: 0 };
+
+    // Always fetch the latest 100 messages
+    const fetchOptions = { limit: 100 };
     const messages = await channel.messages.fetch(fetchOptions);
-    if (!messages.size) return;
+    if (!messages.size) {
+      return;
+    }
+
+    // Sort messages from oldest to newest
     const sortedMessages = [...messages.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
     for (const msg of sortedMessages) {
+      if (msg.createdTimestamp < START_DATE.getTime()) continue;
       for (const embed of msg.embeds) {
+        // Check if this image has already been uploaded by filename
+        const url = embed?.image?.url;
+        if (!url) continue;
+        let gamertag = extractGamertagFromEmbed(embed);
+        if (!gamertag || gamertag === 'Unknown') {
+          gamertag = msg.author?.username || 'Unknown';
+        }
+        const ext = path.extname(url.split('?')[0]) || '.jpg';
+        const name = `${gamertag.replace(/[^a-zA-Z0-9_\-]/g, '')}_${msg.id}${ext}`;
+        const githubFolder = `snapmatic/${gamertag.replace(/[^a-zA-Z0-9_\-]/g, '')}`;
+        const githubName = name.replace(/^.*?_/, '');
+        const githubPath = `${githubFolder}/${githubName}`;
+        if (knownFilenames.has(githubPath)) {
+          continue; // Already processed
+        }
         try {
           await processEmbed(msg, embed);
         } catch (e) {
@@ -231,8 +253,6 @@ async function fetchImages() {
         }
       }
     }
-    // Update lastMessageId to the newest processed message
-    lastMessageId = sortedMessages[sortedMessages.length - 1]?.id || lastMessageId;
   } catch (e) {
     console.error(`[FetchImages] ${e.message}`);
   }
@@ -243,16 +263,8 @@ discordClient.once(Events.ClientReady, async () => {
   console.log(`[Startup] Fetching existing filenames from Supabase...`);
   await loadKnownFilenames();
   console.log(`[Startup] Loaded ${knownFilenames.size} filenames from Supabase.`);
-
-  // Set lastMessageId to the latest message in the channel (if any)
-  const channel = await discordClient.channels.fetch(CHANNEL_ID);
-  const messages = await channel.messages.fetch({ limit: 1 });
-  if (messages.size > 0) {
-    lastMessageId = messages.first().id;
-    console.log(`[Startup] Set lastMessageId to ${lastMessageId}`);
-  } else {
-    console.log(`[Startup] Channel is empty, no lastMessageId set.`);
-  }
+  // Initial backlog scan (optional, can be removed if not needed)
+  await fetchImages();
 
   setInterval(async () => {
     try {
