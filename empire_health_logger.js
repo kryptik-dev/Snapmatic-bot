@@ -116,30 +116,120 @@ async function healthCheckLoop(channel) {
 
 empireClient.once('ready', async () => {
   const channel = await empireClient.channels.fetch(EMPIRE_CHANNEL_ID);
+  
+  try {
+    const messages = await channel.messages.fetch({ limit: 10 });
+    const botMessages = messages.filter(msg => msg.author.id === empireClient.user.id);
+    if (botMessages.size > 0) {
+      await channel.bulkDelete(botMessages);
+    }
+  } catch (e) {
+    console.error('[EmpireHealthLogger] Failed to clean up old messages:', e);
+  }
+  
   await updateStatusMessage(channel, 'up', false);
   await updateLogsMessage();
   healthCheckLoop(channel);
 
-  // Register /lastupload command
   try {
     await empireClient.application.commands.create({
       name: 'lastupload',
       description: 'Show the last uploaded image log',
     }, channel.guild.id);
+    await empireClient.application.commands.create({
+      name: 'checkup_on_kryptik',
+      description: 'Check up on кяуρтιк\'s Discord activity',
+    }, channel.guild.id);
   } catch (e) {
-    console.error('[EmpireHealthLogger] Failed to register /lastupload command:', e);
+    console.error('[EmpireHealthLogger] Failed to register commands:', e);
   }
 });
 
 empireClient.on('interactionCreate', async interaction => {
   if (!interaction.isCommand()) return;
   if (interaction.commandName === 'lastupload') {
-    // Find the last log entry that looks like an image upload
     const lastUpload = [...logs].reverse().find(l => l.includes('[GitHub] Uploaded:'));
     if (lastUpload) {
       await interaction.reply({ content: `Last uploaded image log:\n\`\`\`${lastUpload}\`\`\``, flags: 1 << 6 });
     } else {
       await interaction.reply({ content: 'No image upload logs found.', flags: 1 << 6 });
+    }
+  }
+  if (interaction.commandName === 'checkup_on_kryptik') {
+    try {
+      const user = await empireClient.users.fetch('1347203516304986147');
+      const member = await interaction.guild.members.fetch('1347203516304986147');
+      
+      const activities = [
+        'Playing with his Snapmatic bot',
+        'Coding in his basement',
+        'Eating pizza at 3 AM',
+        'Arguing with his code',
+        'Pretending to be productive',
+        'Staring at Discord for hours',
+        'Making questionable life choices',
+        'Debugging his life',
+        'Being a digital hermit',
+        'Creating chaos in the matrix'
+      ];
+      
+      const status = member.presence?.status || 'offline';
+      const statusEmoji = {
+        'online': '🟢',
+        'idle': '🟡', 
+        'dnd': '🔴',
+        'offline': '⚫'
+      }[status] || '⚫';
+      
+      let activityText = 'No activity detected';
+      let activityType = 'Unknown';
+      
+      if (member.presence?.activities && member.presence.activities.length > 0) {
+        const activity = member.presence.activities[0];
+        activityType = activity.type;
+        activityText = activity.name;
+        
+        if (activity.details) {
+          activityText += ` - ${activity.details}`;
+        }
+        if (activity.state) {
+          activityText += ` (${activity.state})`;
+        }
+      } else {
+        const randomActivity = activities[Math.floor(Math.random() * activities.length)];
+        activityText = randomActivity;
+        activityType = 'Custom';
+      }
+      
+      const embed = new EmbedBuilder()
+        .setTitle('кяуρтιк Activity Report')
+        .setThumbnail(user.displayAvatarURL())
+        .setColor(0x00ff00)
+        .addFields(
+          { name: 'Status', value: `${statusEmoji} ${status}`, inline: true },
+          { name: 'Activity Type', value: activityType, inline: true },
+          { name: 'Activity', value: activityText, inline: true },
+          { name: 'Last Seen', value: getLocalTimestamp(), inline: true },
+          { name: 'Mental State', value: 'Questionable', inline: true },
+          { name: 'Caffeine Level', value: 'Critical', inline: true },
+          { name: 'Sanity', value: 'Decreasing', inline: true }
+        )
+        .setFooter({ text: 'This report is 100% accurate (probably not)' });
+      
+      await interaction.reply({ embeds: [embed], flags: 1 << 6 });
+    } catch (e) {
+      const embed = new EmbedBuilder()
+        .setTitle('кяуρтιк Activity Report')
+        .setColor(0xff0000)
+        .setDescription('User not found or offline. Probably hiding from responsibilities.')
+        .addFields(
+          { name: 'Status', value: '⚫ Missing in action', inline: true },
+          { name: 'Last Known Activity', value: 'Being a digital ghost', inline: true },
+          { name: 'Suspected Location', value: 'His code cave', inline: true }
+        )
+        .setFooter({ text: 'This report is based on pure speculation' });
+      
+      await interaction.reply({ embeds: [embed], flags: 1 << 6 });
     }
   }
 });
