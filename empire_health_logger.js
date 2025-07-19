@@ -115,7 +115,11 @@ empireClient.once('ready', async () => {
   setTimeout(async () => {
     const channel = await empireClient.channels.fetch(EMPIRE_CHANNEL_ID);
     await updateStatusMessage(channel, 'up', false);
-    await updateLogsMessage();
+    
+    setTimeout(async () => {
+      await updateLogsMessage();
+    }, 10000);
+    
     healthCheckLoop(channel);
 
     try {
@@ -149,15 +153,19 @@ empireClient.on('interactionCreate', async interaction => {
       const guild = interaction.guild;
       const member = await guild.members.fetch('1347203516304986147');
       
-      let activity = 'doing absolutely nothing productive';
+      let activity = 'No activity';
       let status = 'offline';
+      let details = '';
+      let state = '';
       
       if (member.presence) {
         status = member.presence.status;
         if (member.presence.activities && member.presence.activities.length > 0) {
-          const game = member.presence.activities.find(a => a.type === 'PLAYING');
-          if (game) {
-            activity = `playing ${game.name}`;
+          const richPresence = member.presence.activities.find(a => a.type === 'PLAYING' || a.type === 'STREAMING' || a.type === 'LISTENING' || a.type === 'WATCHING' || a.type === 'COMPETING');
+          if (richPresence) {
+            activity = richPresence.name;
+            details = richPresence.details || '';
+            state = richPresence.state || '';
           }
         }
       }
@@ -180,15 +188,23 @@ empireClient.on('interactionCreate', async interaction => {
         'counting his problems'
       ];
       
-      if (activity === 'doing absolutely nothing productive') {
+      if (activity === 'No activity') {
         activity = funnyActivities[Math.floor(Math.random() * funnyActivities.length)];
       }
       
       const embed = new EmbedBuilder()
         .setTitle('кяуρтιк Status Report')
+        .setThumbnail(user.displayAvatarURL({ dynamic: true }))
         .setDescription(`**Current Status:** ${status}\n**Activity:** ${activity}`)
         .setColor(0x00ff00)
         .setTimestamp();
+      
+      if (details) {
+        embed.addFields({ name: 'Details', value: details, inline: true });
+      }
+      if (state) {
+        embed.addFields({ name: 'State', value: state, inline: true });
+      }
       
       await interaction.reply({ embeds: [embed], flags: 1 << 6 });
     } catch (e) {
