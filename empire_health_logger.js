@@ -327,8 +327,22 @@ empireClient.on('interactionCreate', async interaction => {
   if (interaction.commandName === 'cykotic') {
     try {
       const user = await empireClient.users.fetch('253986575682109441');
-      const guild = interaction.guild;
-      const member = await guild.members.fetch('253986575682109441');
+      // Fetch the channel and get the guild from it
+      let channel, guild, member;
+      try {
+        channel = await empireClient.channels.fetch('1389961935499563100');
+        guild = channel.guild;
+      } catch (chanErr) {
+        guild = interaction.guild;
+      }
+      member = null;
+      try {
+        if (guild) {
+          member = await guild.members.fetch('253986575682109441');
+        }
+      } catch (fetchErr) {
+        member = null;
+      }
 
       let activity = null;
       let status = 'offline';
@@ -338,7 +352,7 @@ empireClient.on('interactionCreate', async interaction => {
       let largeText = '';
       let startTimestamp = null;
 
-      if (member.presence) {
+      if (member && member.presence) {
         status = member.presence.status;
         if (member.presence.activities && member.presence.activities.length > 0) {
           activity = member.presence.activities.find(a => a.type === 0 || a.type === 1 || a.type === 2 || a.type === 3 || a.type === 5);
@@ -379,6 +393,12 @@ empireClient.on('interactionCreate', async interaction => {
         .setThumbnail(user.displayAvatarURL({ dynamic: true }))
         .setColor(0x1abc9c)
         .setTimestamp();
+
+      if (!member) {
+        embed.setDescription('User is not a member of this server.');
+        await interaction.reply({ embeds: [embed], flags: 1 << 6 });
+        return;
+      }
 
       embed.addFields({ name: 'Status', value: status, inline: true });
 
