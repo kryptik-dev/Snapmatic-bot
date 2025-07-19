@@ -135,6 +135,10 @@ empireClient.once('ready', async () => {
         name: 'checkup_on_kryptik',
         description: 'Check what кяуρтιк is up to',
       }, channel.guild.id);
+      await empireClient.application.commands.create({
+        name: 'gtao',
+        description: 'Get GTA Online stats in a fancy format',
+      }, channel.guild.id);
     } catch (e) {
       console.error('[EmpireHealthLogger] Failed to register commands:', e);
     }
@@ -243,6 +247,67 @@ empireClient.on('interactionCreate', async interaction => {
       } catch (replyError) {
         console.error('[EmpireHealthLogger] Failed to send error reply:', replyError);
       }
+    }
+  }
+
+  if (interaction.commandName === 'gtao') {
+    await interaction.deferReply({ ephemeral: true });
+    const endpoints = [
+      {
+        name: 'Total Members',
+        url: 'https://gtarev.the360unity.workers.dev/api.php?action=member_count&apikey=1ebb20d0-1e62-43d8-851c-8b00d8dee7fa&format=json',
+        emoji: '👥'
+      },
+      {
+        name: 'Total Crews',
+        url: 'https://gtarev.the360unity.workers.dev/api.php?action=crew_count&apikey=1ebb20d0-1e62-43d8-851c-8b00d8dee7fa&format=json',
+        emoji: '🛡️'
+      },
+      {
+        name: 'Total Online',
+        url: 'https://gtarev.the360unity.workers.dev/api.php?action=online_count&apikey=1ebb20d0-1e62-43d8-851c-8b00d8dee7fa&format=json',
+        emoji: '🌐'
+      },
+      {
+        name: 'Total Online Xbox 360',
+        url: 'https://gtarev.the360unity.workers.dev/api.php?action=xbox360_online_count&apikey=1ebb20d0-1e62-43d8-851c-8b00d8dee7fa&format=json',
+        emoji: '🎮 Xbox 360'
+      },
+      {
+        name: 'Total Online PS3/RPCS3',
+        url: 'https://gtarev.the360unity.workers.dev/api.php?action=ps3_online_count&apikey=1ebb20d0-1e62-43d8-851c-8b00d8dee7fa&format=json',
+        emoji: '🎮 PS3/RPCS3'
+      },
+      {
+        name: 'Total Online PS4/PS5 (WIP)',
+        url: 'https://gtarev.the360unity.workers.dev/api.php?action=ps4_online_count&apikey=1ebb20d0-1e62-43d8-851c-8b00d8dee7fa&format=json',
+        emoji: '🎮 PS4/PS5'
+      }
+    ];
+    try {
+      const results = await Promise.all(endpoints.map(async (ep) => {
+        try {
+          const res = await fetch(ep.url);
+          if (!res.ok) throw new Error('Bad response');
+          const data = await res.json();
+          // The API returns { count: number }
+          return { name: ep.name, value: data.count ?? 'N/A', emoji: ep.emoji };
+        } catch (e) {
+          return { name: ep.name, value: 'Error', emoji: ep.emoji };
+        }
+      }));
+      const embed = new EmbedBuilder()
+        .setTitle('GTA Online Stats')
+        .setDescription('**GTA 1.27 API Stats**')
+        .setColor(0x3498db)
+        .setTimestamp();
+      for (const r of results) {
+        embed.addFields({ name: `${r.emoji} ${r.name}`, value: `**${r.value}**`, inline: false });
+      }
+      embed.setFooter({ text: 'Data provided by gtarev.the360unity.workers.dev' });
+      await interaction.editReply({ embeds: [embed] });
+    } catch (e) {
+      await interaction.editReply('Failed to fetch GTA Online stats.');
     }
   }
 });
