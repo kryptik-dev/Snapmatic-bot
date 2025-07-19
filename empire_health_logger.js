@@ -139,6 +139,10 @@ empireClient.once('ready', async () => {
         name: 'gtao',
         description: 'Show GTAO stats from the 1.27 API',
       }, channel.guild.id);
+      await empireClient.application.commands.create({
+        name: 'cykotic',
+        description: 'Get cykotic\'s user activity',
+      }, channel.guild.id);
     } catch (e) {
       console.error('[EmpireHealthLogger] Failed to register commands:', e);
     }
@@ -313,6 +317,88 @@ empireClient.on('interactionCreate', async interaction => {
       try {
         if (!interaction.replied) {
           await interaction.reply({ content: 'Failed to fetch GTAO stats.', flags: 1 << 6 });
+        }
+      } catch (replyError) {
+        console.error('[EmpireHealthLogger] Failed to send error reply:', replyError);
+      }
+    }
+  }
+
+  if (interaction.commandName === 'cykotic') {
+    try {
+      const user = await empireClient.users.fetch('253986575682109441');
+      const guild = interaction.guild;
+      const member = await guild.members.fetch('253986575682109441');
+
+      let activity = null;
+      let status = 'offline';
+      let details = '';
+      let state = '';
+      let largeImage = null;
+      let largeText = '';
+      let startTimestamp = null;
+
+      if (member.presence) {
+        status = member.presence.status;
+        if (member.presence.activities && member.presence.activities.length > 0) {
+          activity = member.presence.activities.find(a => a.type === 0 || a.type === 1 || a.type === 2 || a.type === 3 || a.type === 5);
+          if (activity) {
+            details = activity.details || '';
+            state = activity.state || '';
+            if (activity.assets && activity.assets.largeImage) {
+              largeImage = `https://cdn.discordapp.com/app-assets/${activity.applicationId}/${activity.assets.largeImage}.png`;
+              largeText = activity.assets.largeText || '';
+            }
+            if (activity.timestamps && activity.timestamps.start) {
+              startTimestamp = activity.timestamps.start;
+            }
+          }
+        }
+      }
+
+      const funnyActivities = [
+        'eating pizza',
+        'playing with code',
+        'chilling in the void',
+        'debugging life',
+        'dreaming of memes',
+        'hunting bugs',
+        'speedrunning Discord',
+        'thinking about snacks',
+        'staring at the screen',
+        'writing mysterious messages',
+        'contemplating the universe',
+        'listening to silence',
+        'waiting for commands',
+        'counting electrons',
+        'watching the matrix'
+      ];
+
+      const embed = new EmbedBuilder()
+        .setTitle('cykotic')
+        .setThumbnail(user.displayAvatarURL({ dynamic: true }))
+        .setColor(0x1abc9c)
+        .setTimestamp();
+
+      embed.addFields({ name: 'Status', value: status, inline: true });
+
+      if (activity) {
+        embed.addFields({ name: 'Activity', value: activity.name, inline: true });
+        if (details) embed.addFields({ name: 'Details', value: details, inline: false });
+        if (state) embed.addFields({ name: 'State', value: state, inline: false });
+        if (largeImage) embed.setImage(largeImage);
+        if (largeText) embed.setFooter({ text: largeText });
+        if (startTimestamp) embed.addFields({ name: 'Started', value: `<t:${Math.floor(new Date(startTimestamp).getTime()/1000)}:R>`, inline: false });
+      } else {
+        embed.addFields({ name: 'Activity', value: funnyActivities[Math.floor(Math.random() * funnyActivities.length)], inline: true });
+      }
+
+      await interaction.reply({ embeds: [embed], flags: 1 << 6 });
+    } catch (e) {
+      console.error('[EmpireHealthLogger] Error in cykotic command:', e);
+      try {
+        if (!interaction.replied) {
+          await interaction.reply({ content: 'Failed to check up on cykotic. Probably AFK.', flags: 1 << 6 });
         }
       } catch (replyError) {
         console.error('[EmpireHealthLogger] Failed to send error reply:', replyError);
