@@ -15,7 +15,7 @@ if (!HEALTH_CHECK_TOKEN || !EMPIRE_CHANNEL_ID) {
 }
 
 const empireClient = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildPresences]
 });
 
 let statusMessageId = null;
@@ -110,23 +110,27 @@ async function healthCheckLoop(channel) {
 }
 
 empireClient.once('ready', async () => {
-  const channel = await empireClient.channels.fetch(EMPIRE_CHANNEL_ID);
-  await updateStatusMessage(channel, 'up', false);
-  await updateLogsMessage();
-  healthCheckLoop(channel);
+  console.log('[EmpireHealthLogger] Bot is ready, waiting 60 seconds before starting...');
+  
+  setTimeout(async () => {
+    const channel = await empireClient.channels.fetch(EMPIRE_CHANNEL_ID);
+    await updateStatusMessage(channel, 'up', false);
+    await updateLogsMessage();
+    healthCheckLoop(channel);
 
-  try {
-    await empireClient.application.commands.create({
-      name: 'lastupload',
-      description: 'Show the last uploaded image log',
-    }, channel.guild.id);
-    await empireClient.application.commands.create({
-      name: 'checkup_on_kryptik',
-      description: 'Check what кяуρтιк is up to',
-    }, channel.guild.id);
-  } catch (e) {
-    console.error('[EmpireHealthLogger] Failed to register commands:', e);
-  }
+    try {
+      await empireClient.application.commands.create({
+        name: 'lastupload',
+        description: 'Show the last uploaded image log',
+      }, channel.guild.id);
+      await empireClient.application.commands.create({
+        name: 'checkup_on_kryptik',
+        description: 'Check what кяуρтιк is up to',
+      }, channel.guild.id);
+    } catch (e) {
+      console.error('[EmpireHealthLogger] Failed to register commands:', e);
+    }
+  }, 60000);
 });
 
 empireClient.on('interactionCreate', async interaction => {
