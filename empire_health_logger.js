@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const fetch = require('node-fetch');
+const fs = require('fs');
 
 const HEALTH_CHECK_TOKEN = process.env.HEALTH_CHECK_TOKEN;
 const EMPIRE_CHANNEL_ID = process.env.EMPIRE_CHANNEL_ID;
@@ -8,6 +9,7 @@ const HEALTH_CHECK_URL = 'https://snapmatic-bot.onrender.com/';
 const HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
 const LOG_LINES = 5;
 const TAG_USER_ID = '1347203516304986147';
+const MESSAGE_ID_PATH = './empire_message_ids.json';
 
 if (!HEALTH_CHECK_TOKEN || !EMPIRE_CHANNEL_ID) {
   console.error('[EmpireHealthLogger] Missing HEALTH_CHECK_TOKEN or EMPIRE_CHANNEL_ID in .env');
@@ -39,15 +41,34 @@ function addLog(level, message) {
   updateLogsMessage();
 }
 
+function saveMessageIds() {
+  fs.writeFileSync(MESSAGE_ID_PATH, JSON.stringify({ statusMessageId, logsMessageId }, null, 2));
+}
+
+function loadMessageIds() {
+  if (fs.existsSync(MESSAGE_ID_PATH)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(MESSAGE_ID_PATH, 'utf8'));
+      statusMessageId = data.statusMessageId || null;
+      logsMessageId = data.logsMessageId || null;
+    } catch (e) {
+      statusMessageId = null;
+      logsMessageId = null;
+    }
+  }
+}
+
+loadMessageIds();
+
 async function updateStatusMessage(channel, status, tag = false) {
   const isUp = status === 'up';
   const color = isUp ? 0x57F287 : 0xED4245; // Discord green/red
   const dot = isUp ? '🟢' : '🔴';
   const desc = isUp
-    ? `${dot} **кяуρтιк your Snapmatic Scraper is online.**`
-    : `${dot} **кяуρтιк your naai, your stupid Snapmatic Scraper is down. Wake Up!** <@${TAG_USER_ID}>`;
+    ? `${dot} **кяуρтιк your Snapmatic scraper is online.**`
+    : `${dot} **кяуρтιк your naai, your stupid snapmatic scraper is down.** <@${TAG_USER_ID}>`;
   const embed = new EmbedBuilder()
-    .setTitle('Snapmatic Scraper Status')
+    .setTitle('Snapmatic Bot Status')
     .setURL(HEALTH_CHECK_URL)
     .setDescription(desc)
     .addFields({ name: 'Last checked', value: getLocalTimestamp(), inline: false })
@@ -57,13 +78,14 @@ async function updateStatusMessage(channel, status, tag = false) {
       const msg = await channel.messages.fetch(statusMessageId);
       await msg.edit({ embeds: [embed] });
     } catch (e) {
-      // If message was deleted, send a new one
       const newMsg = await channel.send({ embeds: [embed] });
       statusMessageId = newMsg.id;
+      saveMessageIds();
     }
   } else {
     const msg = await channel.send({ embeds: [embed] });
     statusMessageId = msg.id;
+    saveMessageIds();
   }
 }
 
@@ -76,13 +98,14 @@ async function updateLogsMessage() {
       const msg = await channel.messages.fetch(logsMessageId);
       await msg.edit(content);
     } catch (e) {
-      // If message was deleted, send a new one
       const newMsg = await channel.send(content);
       logsMessageId = newMsg.id;
+      saveMessageIds();
     }
   } else {
     const msg = await channel.send(content);
     logsMessageId = msg.id;
+    saveMessageIds();
   }
 }
 
@@ -126,8 +149,12 @@ empireClient.once('ready', async () => {
       name: 'lastupload',
       description: 'Show the last uploaded image log',
     }, channel.guild.id);
+    await empireClient.application.commands.create({
+      name: 'checkup_on_kryptik',
+      description: 'Check what кяуρтιк is up to',
+    }, channel.guild.id);
   } catch (e) {
-    console.error('[EmpireHealthLogger] Failed to register /lastupload command:', e);
+    console.error('[EmpireHealthLogger] Failed to register commands:', e);
   }
 });
 
@@ -140,6 +167,58 @@ empireClient.on('interactionCreate', async interaction => {
       await interaction.reply({ content: `Last uploaded image log:\n\`\`\`${lastUpload}\`\`\``, flags: 1 << 6 });
     } else {
       await interaction.reply({ content: 'No image upload logs found.', flags: 1 << 6 });
+    }
+  }
+  if (interaction.commandName === 'checkup_on_kryptik') {
+    try {
+      const user = await empireClient.users.fetch('1347203516304986147');
+      const guild = interaction.guild;
+      const member = await guild.members.fetch('1347203516304986147');
+      
+      let activity = 'doing absolutely nothing productive';
+      let status = 'offline';
+      
+      if (member.presence) {
+        status = member.presence.status;
+        if (member.presence.activities && member.presence.activities.length > 0) {
+          const game = member.presence.activities.find(a => a.type === 'PLAYING');
+          if (game) {
+            activity = `playing ${game.name}`;
+          }
+        }
+      }
+      
+      const funnyActivities = [
+        'crying in the corner',
+        'eating glue',
+        'talking to his plants',
+        'dancing with his shadow',
+        'having an existential crisis',
+        'pretending to code',
+        'arguing with his reflection',
+        'teaching his cat to code',
+        'having a tea party with his bugs',
+        'contemplating life choices',
+        'staring at a wall',
+        'having a mental breakdown',
+        'talking to himself',
+        'watching paint dry',
+        'counting his problems'
+      ];
+      
+      if (activity === 'doing absolutely nothing productive') {
+        activity = funnyActivities[Math.floor(Math.random() * funnyActivities.length)];
+      }
+      
+      const embed = new EmbedBuilder()
+        .setTitle('кяуρтιк Status Report')
+        .setDescription(`**Current Status:** ${status}\n**Activity:** ${activity}`)
+        .setColor(0x00ff00)
+        .setTimestamp();
+      
+      await interaction.reply({ embeds: [embed], flags: 1 << 6 });
+    } catch (e) {
+      await interaction.reply({ content: 'Failed to check up on кяуρтιк. Probably hiding.', flags: 1 << 6 });
     }
   }
 });
