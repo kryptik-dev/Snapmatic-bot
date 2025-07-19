@@ -15,7 +15,7 @@ if (!HEALTH_CHECK_TOKEN || !EMPIRE_CHANNEL_ID) {
 }
 
 const empireClient = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildPresences]
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildPresences, GatewayIntentBits.GuildMembers]
 });
 
 let statusMessageId = null;
@@ -139,19 +139,35 @@ empireClient.once('ready', async () => {
 
 empireClient.on('interactionCreate', async interaction => {
   if (!interaction.isCommand()) return;
+  
   if (interaction.commandName === 'lastupload') {
-    const lastUpload = [...logs].reverse().find(l => l.includes('[GitHub] Uploaded:'));
-    if (lastUpload) {
-      await interaction.reply({ content: `Last uploaded image log:\n\`\`\`${lastUpload}\`\`\``, flags: 1 << 6 });
-    } else {
-      await interaction.reply({ content: 'No image upload logs found.', flags: 1 << 6 });
+    try {
+      const lastUpload = [...logs].reverse().find(l => l.includes('[GitHub] Uploaded:'));
+      if (lastUpload) {
+        await interaction.reply({ content: `Last uploaded image log:\n\`\`\`${lastUpload}\`\`\``, flags: 1 << 6 });
+      } else {
+        await interaction.reply({ content: 'No image upload logs found.', flags: 1 << 6 });
+      }
+    } catch (e) {
+      console.error('[EmpireHealthLogger] Error in lastupload command:', e);
+      try {
+        if (!interaction.replied) {
+          await interaction.reply({ content: 'Error processing command.', flags: 1 << 6 });
+        }
+      } catch (replyError) {
+        console.error('[EmpireHealthLogger] Failed to send error reply:', replyError);
+      }
     }
   }
+  
   if (interaction.commandName === 'checkup_on_kryptik') {
     try {
       const user = await empireClient.users.fetch('1347203516304986147');
       const guild = interaction.guild;
       const member = await guild.members.fetch('1347203516304986147');
+      
+      console.log('[EmpireHealthLogger] Member presence:', member.presence);
+      console.log('[EmpireHealthLogger] Member activities:', member.presence?.activities);
       
       let activity = 'No activity';
       let status = 'offline';
@@ -160,9 +176,12 @@ empireClient.on('interactionCreate', async interaction => {
       
       if (member.presence) {
         status = member.presence.status;
+        console.log('[EmpireHealthLogger] User status:', status);
         if (member.presence.activities && member.presence.activities.length > 0) {
+          console.log('[EmpireHealthLogger] All activities:', member.presence.activities);
           const richPresence = member.presence.activities.find(a => a.type === 'PLAYING' || a.type === 'STREAMING' || a.type === 'LISTENING' || a.type === 'WATCHING' || a.type === 'COMPETING');
           if (richPresence) {
+            console.log('[EmpireHealthLogger] Found rich presence:', richPresence);
             activity = richPresence.name;
             details = richPresence.details || '';
             state = richPresence.state || '';
@@ -208,7 +227,14 @@ empireClient.on('interactionCreate', async interaction => {
       
       await interaction.reply({ embeds: [embed], flags: 1 << 6 });
     } catch (e) {
-      await interaction.reply({ content: 'Failed to check up on кяуρтιк. Probably hiding.', flags: 1 << 6 });
+      console.error('[EmpireHealthLogger] Error in checkup_on_kryptik command:', e);
+      try {
+        if (!interaction.replied) {
+          await interaction.reply({ content: 'Failed to check up on кяуρтιк. Probably hiding.', flags: 1 << 6 });
+        }
+      } catch (replyError) {
+        console.error('[EmpireHealthLogger] Failed to send error reply:', replyError);
+      }
     }
   }
 });
