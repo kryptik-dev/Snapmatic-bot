@@ -104,8 +104,6 @@ async function healthCheckLoop(channel) {
     if (status !== lastStatus) {
       await updateStatusMessage(channel, status, tag);
       lastStatus = status;
-    } else {
-      await updateStatusMessage(channel, status, tag);
     }
     await new Promise(r => setTimeout(r, HEALTH_CHECK_INTERVAL));
   }
