@@ -283,20 +283,32 @@ empireClient.on('interactionCreate', async interaction => {
           const res = await fetch(ep.url);
           if (!res.ok) throw new Error('HTTP ' + res.status);
           const json = await res.json();
-          // Try to get the first value in the JSON
           const value = Object.values(json)[0];
           return { label: ep.label, value };
         } catch (e) {
           return { label: ep.label, value: 'Error' };
         }
       }));
-      // Build markdown table
-      let md = '**GTA 1.27 API Stats**\n';
-      md += '| Description | Count |\n|---|---|\n';
+      // Build markdown table as code block
+      let table = 'Description                | Count\n';
+      table += '-------------------------- | -----\n';
       for (const row of results) {
-        md += `| ${row.label} | ${row.value} |\n`;
+        table += `${row.label.padEnd(26)} | ${row.value}\n`;
       }
-      await interaction.reply({ content: md, flags: 1 << 6 });
+      // Create embed
+      const embed = new EmbedBuilder()
+        .setTitle('GTA 1.27 API Stats')
+        .setDescription('Live statistics from the GTA 1.27 API')
+        .setColor(0x8d10b7)
+        .setThumbnail('https://i.imgur.com/0Q9Y6kq.png') // Example GTA logo, replace if you have a better one
+        .addFields({
+          name: 'Stats',
+          value: `\u200B\n\n\`\`\`${table}\`\`\`\n`,
+          inline: false
+        })
+        .setFooter({ text: `Requested by ${interaction.user.username}` })
+        .setTimestamp();
+      await interaction.reply({ embeds: [embed], flags: 1 << 6 });
     } catch (e) {
       console.error('[EmpireHealthLogger] Error in gtao command:', e);
       try {
