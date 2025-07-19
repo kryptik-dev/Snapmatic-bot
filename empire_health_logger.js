@@ -120,7 +120,6 @@ empireClient.once('ready', async () => {
     await updateStatusMessage(channel, 'up', false);
     
     setTimeout(async () => {
-      logs = []; // Clear logs before enabling live log updates
       await updateLogsMessage();
       logsMessageReady = true;
     }, 10000);
@@ -135,6 +134,10 @@ empireClient.once('ready', async () => {
       await empireClient.application.commands.create({
         name: 'checkup_on_kryptik',
         description: 'Check what кяуρтιк is up to',
+      }, channel.guild.id);
+      await empireClient.application.commands.create({
+        name: 'gtao',
+        description: 'Show GTAO stats from the 1.27 API',
       }, channel.guild.id);
     } catch (e) {
       console.error('[EmpireHealthLogger] Failed to register commands:', e);
@@ -240,6 +243,65 @@ empireClient.on('interactionCreate', async interaction => {
       try {
         if (!interaction.replied) {
           await interaction.reply({ content: 'Failed to check up on кяуρтιк. Probably hiding.', flags: 1 << 6 });
+        }
+      } catch (replyError) {
+        console.error('[EmpireHealthLogger] Failed to send error reply:', replyError);
+      }
+    }
+  }
+  
+  if (interaction.commandName === 'gtao') {
+    try {
+      const endpoints = [
+        {
+          label: 'Total Members',
+          url: 'https://gtarev.the360unity.workers.dev/api.php?action=member_count&apikey=1ebb20d0-1e62-43d8-851c-8b00d8dee7fa&format=json'
+        },
+        {
+          label: 'Total Crews',
+          url: 'https://gtarev.the360unity.workers.dev/api.php?action=crew_count&apikey=1ebb20d0-1e62-43d8-851c-8b00d8dee7fa&format=json'
+        },
+        {
+          label: 'Total Online',
+          url: 'https://gtarev.the360unity.workers.dev/api.php?action=online_count&apikey=1ebb20d0-1e62-43d8-851c-8b00d8dee7fa&format=json'
+        },
+        {
+          label: 'Total Online Xbox 360',
+          url: 'https://gtarev.the360unity.workers.dev/api.php?action=xbox360_online_count&apikey=1ebb20d0-1e62-43d8-851c-8b00d8dee7fa&format=json'
+        },
+        {
+          label: 'Total Online PS3/RPCS3',
+          url: 'https://gtarev.the360unity.workers.dev/api.php?action=ps3_online_count&apikey=1ebb20d0-1e62-43d8-851c-8b00d8dee7fa&format=json'
+        },
+        {
+          label: 'Total Online PS4/PS5 (WIP)',
+          url: 'https://gtarev.the360unity.workers.dev/api.php?action=ps4_online_count&apikey=1ebb20d0-1e62-43d8-851c-8b00d8dee7fa&format=json'
+        }
+      ];
+      const results = await Promise.all(endpoints.map(async ep => {
+        try {
+          const res = await fetch(ep.url);
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const json = await res.json();
+          // Try to get the first value in the JSON
+          const value = Object.values(json)[0];
+          return { label: ep.label, value };
+        } catch (e) {
+          return { label: ep.label, value: 'Error' };
+        }
+      }));
+      // Build markdown table
+      let md = '**GTA 1.27 API Stats**\n';
+      md += '| Description | Count |\n|---|---|\n';
+      for (const row of results) {
+        md += `| ${row.label} | ${row.value} |\n`;
+      }
+      await interaction.reply({ content: md, flags: 1 << 6 });
+    } catch (e) {
+      console.error('[EmpireHealthLogger] Error in gtao command:', e);
+      try {
+        if (!interaction.replied) {
+          await interaction.reply({ content: 'Failed to fetch GTAO stats.', flags: 1 << 6 });
         }
       } catch (replyError) {
         console.error('[EmpireHealthLogger] Failed to send error reply:', replyError);
