@@ -282,25 +282,36 @@ const origLog = console.log;
 const origError = console.error;
 const origWarn = console.warn;
 
+const empireLogger = require('./empire_health_logger');
+
 function logWithCapture(...args) {
   const msg = args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
-  logs.push(`[${new Date().toISOString()}] ${msg}`);
+  logs.push(`[${new Date().toLocaleString()}] ${msg}`);
   if (logs.length > MAX_LOGS) logs.shift();
   origLog.apply(console, args);
+  if (empireLogger && typeof empireLogger.log === 'function') {
+    empireLogger.log('info', msg);
+  }
 }
 
 function errorWithCapture(...args) {
   const msg = args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
-  logs.push(`[${new Date().toISOString()}] ERROR: ${msg}`);
+  logs.push(`[${new Date().toLocaleString()}] ERROR: ${msg}`);
   if (logs.length > MAX_LOGS) logs.shift();
   origError.apply(console, args);
+  if (empireLogger && typeof empireLogger.log === 'function') {
+    empireLogger.log('error', msg);
+  }
 }
 
 function warnWithCapture(...args) {
   const msg = args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
-  logs.push(`[${new Date().toISOString()}] WARN: ${msg}`);
+  logs.push(`[${new Date().toLocaleString()}] WARN: ${msg}`);
   if (logs.length > MAX_LOGS) logs.shift();
   origWarn.apply(console, args);
+  if (empireLogger && typeof empireLogger.log === 'function') {
+    empireLogger.log('warn', msg);
+  }
 }
 
 console.log = logWithCapture;
@@ -319,3 +330,10 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   logWithCapture(`[Express] Web service running on port ${PORT}`);
 });
+
+// Start Empire Health Logger (separate bot for health check and live logs)
+try {
+  require('./empire_health_logger');
+} catch (e) {
+  console.error('[EmpireHealthLogger] Failed to start:', e);
+}
