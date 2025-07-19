@@ -1,15 +1,13 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const fetch = require('node-fetch');
-const fs = require('fs');
 
 const HEALTH_CHECK_TOKEN = process.env.HEALTH_CHECK_TOKEN;
 const EMPIRE_CHANNEL_ID = process.env.EMPIRE_CHANNEL_ID;
 const HEALTH_CHECK_URL = 'https://snapmatic-bot.onrender.com/';
-const HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
+const HEALTH_CHECK_INTERVAL = 30000;
 const LOG_LINES = 5;
 const TAG_USER_ID = '1347203516304986147';
-const MESSAGE_ID_PATH = './empire_message_ids.json';
 
 if (!HEALTH_CHECK_TOKEN || !EMPIRE_CHANNEL_ID) {
   console.error('[EmpireHealthLogger] Missing HEALTH_CHECK_TOKEN or EMPIRE_CHANNEL_ID in .env');
@@ -41,28 +39,9 @@ function addLog(level, message) {
   updateLogsMessage();
 }
 
-function saveMessageIds() {
-  fs.writeFileSync(MESSAGE_ID_PATH, JSON.stringify({ statusMessageId, logsMessageId }, null, 2));
-}
-
-function loadMessageIds() {
-  if (fs.existsSync(MESSAGE_ID_PATH)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(MESSAGE_ID_PATH, 'utf8'));
-      statusMessageId = data.statusMessageId || null;
-      logsMessageId = data.logsMessageId || null;
-    } catch (e) {
-      statusMessageId = null;
-      logsMessageId = null;
-    }
-  }
-}
-
-loadMessageIds();
-
 async function updateStatusMessage(channel, status, tag = false) {
   const isUp = status === 'up';
-  const color = isUp ? 0x57F287 : 0xED4245; // Discord green/red
+  const color = isUp ? 0x57F287 : 0xED4245;
   const dot = isUp ? '🟢' : '🔴';
   const desc = isUp
     ? `${dot} **кяуρтιк your Snapmatic scraper is online.**`
@@ -80,12 +59,10 @@ async function updateStatusMessage(channel, status, tag = false) {
     } catch (e) {
       const newMsg = await channel.send({ embeds: [embed] });
       statusMessageId = newMsg.id;
-      saveMessageIds();
     }
   } else {
     const msg = await channel.send({ embeds: [embed] });
     statusMessageId = msg.id;
-    saveMessageIds();
   }
 }
 
@@ -100,12 +77,10 @@ async function updateLogsMessage() {
     } catch (e) {
       const newMsg = await channel.send(content);
       logsMessageId = newMsg.id;
-      saveMessageIds();
     }
   } else {
     const msg = await channel.send(content);
     logsMessageId = msg.id;
-    saveMessageIds();
   }
 }
 
@@ -130,7 +105,6 @@ async function healthCheckLoop(channel) {
       await updateStatusMessage(channel, status, tag);
       lastStatus = status;
     } else {
-      // Always update last checked time
       await updateStatusMessage(channel, status, tag);
     }
     await new Promise(r => setTimeout(r, HEALTH_CHECK_INTERVAL));
@@ -143,7 +117,6 @@ empireClient.once('ready', async () => {
   await updateLogsMessage();
   healthCheckLoop(channel);
 
-  // Register /lastupload command
   try {
     await empireClient.application.commands.create({
       name: 'lastupload',
@@ -161,7 +134,6 @@ empireClient.once('ready', async () => {
 empireClient.on('interactionCreate', async interaction => {
   if (!interaction.isCommand()) return;
   if (interaction.commandName === 'lastupload') {
-    // Find the last log entry that looks like an image upload
     const lastUpload = [...logs].reverse().find(l => l.includes('[GitHub] Uploaded:'));
     if (lastUpload) {
       await interaction.reply({ content: `Last uploaded image log:\n\`\`\`${lastUpload}\`\`\``, flags: 1 << 6 });
@@ -225,7 +197,6 @@ empireClient.on('interactionCreate', async interaction => {
 
 empireClient.login(HEALTH_CHECK_TOKEN);
 
-// Export log function for use in main app if needed
 module.exports = {
   log: (level, message) => addLog(level, message)
 }; 
