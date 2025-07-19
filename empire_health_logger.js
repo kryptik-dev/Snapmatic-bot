@@ -120,6 +120,7 @@ empireClient.once('ready', async () => {
     await updateStatusMessage(channel, 'up', false);
     
     setTimeout(async () => {
+      logs = []; // Clear logs before enabling live log updates
       await updateLogsMessage();
       logsMessageReady = true;
     }, 10000);
