@@ -300,7 +300,6 @@ empireClient.on('interactionCreate', async interaction => {
         .setTitle('GTA 1.27 API Stats')
         .setDescription('Live statistics from the GTA 1.27 API')
         .setColor(0x8d10b7)
-        .setThumbnail('https://i.imgur.com/0Q9Y6kq.png') // Example GTA logo, replace if you have a better one
         .addFields({
           name: 'Stats',
           value: `\u200B\n\n\`\`\`${table}\`\`\`\n`,
