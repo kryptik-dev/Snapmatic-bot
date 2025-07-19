@@ -22,6 +22,7 @@ let statusMessageId = null;
 let logsMessageId = null;
 let lastStatus = null;
 let logs = [];
+let logsMessageReady = false;
 
 function getLocalTimestamp() {
   return new Date().toLocaleString();
@@ -36,7 +37,9 @@ function addLog(level, message) {
   const line = `[${getLocalTimestamp()}] [${level.toUpperCase()}] ${message}`;
   logs.push(line);
   if (logs.length > 100) logs.shift();
-  updateLogsMessage();
+  if (logsMessageReady) {
+    updateLogsMessage();
+  }
 }
 
 async function updateStatusMessage(channel, status, tag = false) {
@@ -93,7 +96,7 @@ async function healthCheckLoop(channel) {
       const timeout = setTimeout(() => controller.abort(), 5000);
       const res = await fetch(HEALTH_CHECK_URL, { signal: controller.signal });
       clearTimeout(timeout);
-      if (res.status === 502) {
+      if (res.status !== 200) {
         status = 'down';
         tag = true;
       }
@@ -118,6 +121,7 @@ empireClient.once('ready', async () => {
     
     setTimeout(async () => {
       await updateLogsMessage();
+      logsMessageReady = true;
     }, 10000);
     
     healthCheckLoop(channel);
@@ -166,25 +170,28 @@ empireClient.on('interactionCreate', async interaction => {
       const guild = interaction.guild;
       const member = await guild.members.fetch('1347203516304986147');
       
-      console.log('[EmpireHealthLogger] Member presence:', member.presence);
-      console.log('[EmpireHealthLogger] Member activities:', member.presence?.activities);
-      
-      let activity = 'No activity';
+      let activity = null;
       let status = 'offline';
       let details = '';
       let state = '';
+      let largeImage = null;
+      let largeText = '';
+      let startTimestamp = null;
       
       if (member.presence) {
         status = member.presence.status;
-        console.log('[EmpireHealthLogger] User status:', status);
         if (member.presence.activities && member.presence.activities.length > 0) {
-          console.log('[EmpireHealthLogger] All activities:', member.presence.activities);
-          const richPresence = member.presence.activities.find(a => a.type === 'PLAYING' || a.type === 'STREAMING' || a.type === 'LISTENING' || a.type === 'WATCHING' || a.type === 'COMPETING');
-          if (richPresence) {
-            console.log('[EmpireHealthLogger] Found rich presence:', richPresence);
-            activity = richPresence.name;
-            details = richPresence.details || '';
-            state = richPresence.state || '';
+          activity = member.presence.activities.find(a => a.type === 0 || a.type === 1 || a.type === 2 || a.type === 3 || a.type === 5);
+          if (activity) {
+            details = activity.details || '';
+            state = activity.state || '';
+            if (activity.assets && activity.assets.largeImage) {
+              largeImage = `https://cdn.discordapp.com/app-assets/${activity.applicationId}/${activity.assets.largeImage}.png`;
+              largeText = activity.assets.largeText || '';
+            }
+            if (activity.timestamps && activity.timestamps.start) {
+              startTimestamp = activity.timestamps.start;
+            }
           }
         }
       }
@@ -207,22 +214,23 @@ empireClient.on('interactionCreate', async interaction => {
         'counting his problems'
       ];
       
-      if (activity === 'No activity') {
-        activity = funnyActivities[Math.floor(Math.random() * funnyActivities.length)];
-      }
-      
       const embed = new EmbedBuilder()
-        .setTitle('кяуρтιк Status Report')
+        .setTitle('кяуρтιк')
         .setThumbnail(user.displayAvatarURL({ dynamic: true }))
-        .setDescription(`**Current Status:** ${status}\n**Activity:** ${activity}`)
-        .setColor(0x00ff00)
+        .setColor(0x00ccaa)
         .setTimestamp();
       
-      if (details) {
-        embed.addFields({ name: 'Details', value: details, inline: true });
-      }
-      if (state) {
-        embed.addFields({ name: 'State', value: state, inline: true });
+      embed.addFields({ name: 'Status', value: status, inline: true });
+      
+      if (activity) {
+        embed.addFields({ name: 'Activity', value: activity.name, inline: true });
+        if (details) embed.addFields({ name: 'Details', value: details, inline: false });
+        if (state) embed.addFields({ name: 'State', value: state, inline: false });
+        if (largeImage) embed.setImage(largeImage);
+        if (largeText) embed.setFooter({ text: largeText });
+        if (startTimestamp) embed.addFields({ name: 'Started', value: `<t:${Math.floor(new Date(startTimestamp).getTime()/1000)}:R>`, inline: false });
+      } else {
+        embed.addFields({ name: 'Activity', value: funnyActivities[Math.floor(Math.random() * funnyActivities.length)], inline: true });
       }
       
       await interaction.reply({ embeds: [embed], flags: 1 << 6 });
