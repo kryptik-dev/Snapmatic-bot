@@ -116,17 +116,6 @@ async function healthCheckLoop(channel) {
 
 empireClient.once('ready', async () => {
   const channel = await empireClient.channels.fetch(EMPIRE_CHANNEL_ID);
-  
-  try {
-    const messages = await channel.messages.fetch({ limit: 10 });
-    const botMessages = messages.filter(msg => msg.author.id === empireClient.user.id);
-    if (botMessages.size > 0) {
-      await channel.bulkDelete(botMessages);
-    }
-  } catch (e) {
-    console.error('[EmpireHealthLogger] Failed to clean up old messages:', e);
-  }
-  
   await updateStatusMessage(channel, 'up', false);
   await updateLogsMessage();
   healthCheckLoop(channel);
