@@ -15,8 +15,23 @@ for (const key of requiredEnv) {
   }
 }
 
-process.on('unhandledRejection', e => console.error('[Unhandled]', e));
-process.on('uncaughtException', e => console.error('[Uncaught]', e));
+process.on('unhandledRejection', e => {
+  // Prevent recursive logging for Discord API errors
+  if (e && e.message && e.message.includes('DiscordAPIError[50035]')) {
+    console.log('[Unhandled] Discord API error - message too long (prevented recursive logging)');
+  } else {
+    console.error('[Unhandled]', e);
+  }
+});
+
+process.on('uncaughtException', e => {
+  // Prevent recursive logging for Discord API errors
+  if (e && e.message && e.message.includes('DiscordAPIError[50035]')) {
+    console.log('[Uncaught] Discord API error - message too long (prevented recursive logging)');
+  } else {
+    console.error('[Uncaught]', e);
+  }
+});
 
 const { Client, GatewayIntentBits, Events } = require('discord.js');
 const fetch = require('node-fetch');
@@ -285,7 +300,22 @@ const origWarn = console.warn;
 const empireLogger = require('./empire_health_logger');
 
 function logWithCapture(...args) {
-  const msg = args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+  let msg;
+  try {
+    msg = args.map(a => {
+      if (typeof a === 'string') {
+        return a;
+      } else if (typeof a === 'object' && a !== null) {
+        const str = JSON.stringify(a);
+        return str.length > 500 ? str.substring(0, 500) + '... [truncated]' : str;
+      } else {
+        return String(a);
+      }
+    }).join(' ');
+  } catch (e) {
+    msg = '[Log - could not stringify arguments]';
+  }
+  
   logs.push(`[${new Date().toLocaleString()}] ${msg}`);
   if (logs.length > MAX_LOGS) logs.shift();
   origLog.apply(console, args);
@@ -295,17 +325,57 @@ function logWithCapture(...args) {
 }
 
 function errorWithCapture(...args) {
-  const msg = args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+  let msg;
+  try {
+    msg = args.map(a => {
+      if (typeof a === 'string') {
+        return a;
+      } else if (typeof a === 'object' && a !== null) {
+        // For error objects, only include essential information to prevent massive JSON strings
+        if (a.message && a.code) {
+          return `${a.message} (Code: ${a.code})`;
+        } else if (a.message) {
+          return a.message;
+        } else {
+          // Truncate object stringification to prevent memory issues
+          const str = JSON.stringify(a);
+          return str.length > 500 ? str.substring(0, 500) + '... [truncated]' : str;
+        }
+      } else {
+        return String(a);
+      }
+    }).join(' ');
+  } catch (e) {
+    msg = '[Error - could not stringify arguments]';
+  }
+  
   logs.push(`[${new Date().toLocaleString()}] ERROR: ${msg}`);
   if (logs.length > MAX_LOGS) logs.shift();
   origError.apply(console, args);
-  if (empireLogger && typeof empireLogger.log === 'function') {
+  
+  // Don't send Discord API errors to empire logger to prevent recursion
+  if (empireLogger && typeof empireLogger.log === 'function' && !msg.includes('DiscordAPIError[50035]')) {
     empireLogger.log('error', msg);
   }
 }
 
 function warnWithCapture(...args) {
-  const msg = args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+  let msg;
+  try {
+    msg = args.map(a => {
+      if (typeof a === 'string') {
+        return a;
+      } else if (typeof a === 'object' && a !== null) {
+        const str = JSON.stringify(a);
+        return str.length > 500 ? str.substring(0, 500) + '... [truncated]' : str;
+      } else {
+        return String(a);
+      }
+    }).join(' ');
+  } catch (e) {
+    msg = '[Warn - could not stringify arguments]';
+  }
+  
   logs.push(`[${new Date().toLocaleString()}] WARN: ${msg}`);
   if (logs.length > MAX_LOGS) logs.shift();
   origWarn.apply(console, args);

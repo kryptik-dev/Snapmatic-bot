@@ -1,10 +1,12 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const fetch = require('node-fetch');
+const net = require('net');
 
 const HEALTH_CHECK_TOKEN = process.env.HEALTH_CHECK_TOKEN;
 const EMPIRE_CHANNEL_ID = process.env.EMPIRE_CHANNEL_ID;
-const HEALTH_CHECK_URL = 'https://snapmatic-bot.onrender.com/';
+const HEALTH_CHECK_HOST = process.env.HEALTH_CHECK_HOST || 'localhost';
+const HEALTH_CHECK_PORT = 3000;
 const HEALTH_CHECK_INTERVAL = 30000;
 const LOG_LINES = 5;
 const TAG_USER_ID = '1347203516304986147';
@@ -28,13 +30,78 @@ function getLocalTimestamp() {
   return new Date().toLocaleString();
 }
 
+// Function to check if a port is open
+function checkPort(host, port, timeout = 5000) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let isResolved = false;
+
+    const cleanup = () => {
+      if (!isResolved) {
+        isResolved = true;
+        socket.destroy();
+      }
+    };
+
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve(false);
+    }, timeout);
+
+    socket.setTimeout(timeout);
+    
+    socket.on('connect', () => {
+      cleanup();
+      clearTimeout(timer);
+      resolve(true);
+    });
+
+    socket.on('timeout', () => {
+      cleanup();
+      clearTimeout(timer);
+      resolve(false);
+    });
+
+    socket.on('error', () => {
+      cleanup();
+      clearTimeout(timer);
+      resolve(false);
+    });
+
+    socket.connect(port, host);
+  });
+}
+
 function formatLogs() {
   const lines = logs.slice(-LOG_LINES).map(l => l).join('\n');
   return `\u200B\n\`\`\`\n${lines || 'No logs yet.'}\n\`\`\``;
 }
 
 function addLog(level, message) {
-  const line = `[${getLocalTimestamp()}] [${level.toUpperCase()}] ${message}`;
+  // Prevent recursive logging by checking if the message is about Discord API errors
+  if (typeof message === 'string' && message.includes('DiscordAPIError[50035]')) {
+    console.log('[EmpireHealthLogger] Skipping recursive Discord API error log to prevent loop');
+    return;
+  }
+  
+  // Truncate extremely long messages to prevent memory issues
+  let truncatedMessage = message;
+  if (typeof message === 'string' && message.length > 1000) {
+    truncatedMessage = message.substring(0, 1000) + '... [truncated]';
+  } else if (typeof message === 'object') {
+    try {
+      const stringified = JSON.stringify(message);
+      if (stringified.length > 1000) {
+        truncatedMessage = stringified.substring(0, 1000) + '... [truncated]';
+      } else {
+        truncatedMessage = stringified;
+      }
+    } catch (e) {
+      truncatedMessage = '[Object - could not stringify]';
+    }
+  }
+  
+  const line = `[${getLocalTimestamp()}] [${level.toUpperCase()}] ${truncatedMessage}`;
   logs.push(line);
   if (logs.length > 100) logs.shift();
   if (logsMessageReady) {
@@ -51,9 +118,11 @@ async function updateStatusMessage(channel, status, tag = false) {
     : `${dot} **кяуρтιк your naai, your stupid snapmatic scraper is down.** <@${TAG_USER_ID}>`;
   const embed = new EmbedBuilder()
     .setTitle('Snapmatic Bot Status')
-    .setURL(HEALTH_CHECK_URL)
     .setDescription(desc)
-    .addFields({ name: 'Last checked', value: getLocalTimestamp(), inline: false })
+    .addFields(
+      { name: 'Last checked', value: getLocalTimestamp(), inline: false },
+      { name: 'Monitoring', value: `Port ${HEALTH_CHECK_PORT} on ${HEALTH_CHECK_HOST}`, inline: false }
+    )
     .setColor(color);
   if (statusMessageId) {
     try {
@@ -71,19 +140,54 @@ async function updateStatusMessage(channel, status, tag = false) {
 
 async function updateLogsMessage() {
   if (!empireClient.isReady()) return;
-  const channel = await empireClient.channels.fetch(EMPIRE_CHANNEL_ID);
-  const content = `**Live Logs (last ${LOG_LINES}):**\n${formatLogs()}`;
-  if (logsMessageId) {
-    try {
-      const msg = await channel.messages.fetch(logsMessageId);
-      await msg.edit(content);
-    } catch (e) {
-      const newMsg = await channel.send(content);
-      logsMessageId = newMsg.id;
+  
+  try {
+    const channel = await empireClient.channels.fetch(EMPIRE_CHANNEL_ID);
+    let content = `**Live Logs (last ${LOG_LINES}):**\n${formatLogs()}`;
+    
+    // Discord message limit is 4000 characters, leave some buffer
+    const MAX_MESSAGE_LENGTH = 3900;
+    
+    if (content.length > MAX_MESSAGE_LENGTH) {
+      // If content is too long, truncate the logs and add a warning
+      const header = `**Live Logs (last ${LOG_LINES}):**\n\u200B\n\`\`\`\n`;
+      const footer = '\n```';
+      const warningMsg = '\n[Logs truncated due to length]\n';
+      const availableSpace = MAX_MESSAGE_LENGTH - header.length - footer.length - warningMsg.length;
+      
+      // Get the most recent logs that fit
+      const recentLogs = logs.slice(-LOG_LINES);
+      let truncatedLogs = '';
+      for (let i = recentLogs.length - 1; i >= 0; i--) {
+        const logLine = recentLogs[i] + '\n';
+        if (truncatedLogs.length + logLine.length <= availableSpace) {
+          truncatedLogs = logLine + truncatedLogs;
+        } else {
+          break;
+        }
+      }
+      
+      content = header + truncatedLogs + warningMsg + footer;
     }
-  } else {
-    const msg = await channel.send(content);
-    logsMessageId = msg.id;
+    
+    if (logsMessageId) {
+      try {
+        const msg = await channel.messages.fetch(logsMessageId);
+        await msg.edit({ content });
+      } catch (e) {
+        // If edit fails, send a new message
+        const newMsg = await channel.send({ content });
+        logsMessageId = newMsg.id;
+      }
+    } else {
+      const msg = await channel.send({ content });
+      logsMessageId = msg.id;
+    }
+  } catch (error) {
+    // Prevent recursive error logging for Discord API errors
+    if (!error.message?.includes('DiscordAPIError[50035]')) {
+      console.error('[EmpireHealthLogger] Error updating logs message:', error.message);
+    }
   }
 }
 
@@ -92,11 +196,8 @@ async function healthCheckLoop(channel) {
     let status = 'up';
     let tag = false;
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      const res = await fetch(HEALTH_CHECK_URL, { signal: controller.signal });
-      clearTimeout(timeout);
-      if (res.status !== 200) {
+      const isPortOpen = await checkPort(HEALTH_CHECK_HOST, HEALTH_CHECK_PORT, 5000);
+      if (!isPortOpen) {
         status = 'down';
         tag = true;
       }

@@ -7,8 +7,23 @@ require('dotenv').config();
   }
 });
 
-process.on('unhandledRejection', e => console.error('[Unhandled]', e));
-process.on('uncaughtException', e => console.error('[Uncaught]', e));
+process.on('unhandledRejection', e => {
+  // Prevent recursive logging for Discord API errors
+  if (e && e.message && e.message.includes('DiscordAPIError[50035]')) {
+    console.log('[Unhandled] Discord API error - message too long (prevented recursive logging)');
+  } else {
+    console.error('[Unhandled]', e);
+  }
+});
+
+process.on('uncaughtException', e => {
+  // Prevent recursive logging for Discord API errors
+  if (e && e.message && e.message.includes('DiscordAPIError[50035]')) {
+    console.log('[Uncaught] Discord API error - message too long (prevented recursive logging)');
+  } else {
+    console.error('[Uncaught]', e);
+  }
+});
 
 const { Client, GatewayIntentBits, Events } = require('discord.js');
 const fetch = require('node-fetch');
